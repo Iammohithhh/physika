@@ -1026,7 +1026,7 @@ def expr_call(node: Any,
 
     # Built-in functions
     elementwise_ops = ("exp", "log", "sin", "cos", "sqrt", "abs", "tanh",
-                       "real", "imag")
+                       "real", "imag", "floor", "mod", "gt", "le")
     if func_name in elementwise_ops:
         # Element-wise ops preserve the shape of their argument
         if arg_types:
@@ -1047,6 +1047,12 @@ def expr_call(node: Any,
             else:
                 dims.append((new_dim(), "invariant"))
         return TTensor(tuple(dims)), s
+    if func_name == "arange":
+        # arange(n): output is a NEW 1-D tensor, not the shape of n (a scalar)
+        return TTensor(((new_dim(), "invariant"), )), s
+    if func_name == "mask_select":
+        # mask_select(arr, mask): boolean select -> 1-D, data-dependent length
+        return TTensor(((new_dim(), "invariant"), )), s
 
     # User defined functions
     if func_name in ctx.func_env:

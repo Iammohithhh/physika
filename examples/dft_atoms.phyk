@@ -1,0 +1,52 @@
+# Plane-wave DFT: atoms / basis setup (port of SimpleDFT.jl atoms.jl).
+# H parameters (examples.jl): a=16, ecut=16, s=60^3, atom at origin.
+# Validates vs Julia: 12533 active plane waves, Omega = 4096, Sf == 1.
+
+a = 16.0
+ecut = 16.0
+s1 = 60
+s2 = 60
+s3 = 60
+n = s1 * s2 * s3
+
+px = 0.0
+py = 0.0
+pz = 0.0
+
+# Grid indices via C-order divmod (m1 slowest, m3 fastest).
+ms = arange(n)
+m1 = mod(floor(ms / (s3 * s2)), s1)
+m2 = mod(floor(ms / s3), s2)
+m3 = mod(ms, s3)
+
+# Fold the upper half of each axis to negative frequencies.
+def fold_freq(m: ℝ[k], q: ℝ): ℝ[k]:
+    return m - gt(m, q / 2) * q
+
+n1 = fold_freq(m1, s1)
+n2 = fold_freq(m2, s2)
+n3 = fold_freq(m3, s3)
+
+# Cubic cell: |G|^2 = (2pi/a)^2 (n1^2 + n2^2 + n3^2).
+c = 2 * 3.141592653589793 / a
+G2 = c * c * (n1 * n1 + n2 * n2 + n3 * n3)
+
+# Active set below the kinetic-energy cutoff.
+active = le(G2, 2 * ecut)
+G2c = mask_select(G2, active)
+
+# Structure factor (atom at origin -> all ones).
+def structure_factor(nn1: ℝ[k], nn2: ℝ[k], nn3: ℝ[k], cc: ℝ, qx: ℝ, qy: ℝ, qz: ℝ): ℂ[k]:
+    phase = cc * (nn1 * qx + nn2 * qy + nn3 * qz)
+    return exp(-i * phase)
+
+Sf = structure_factor(n1, n2, n3, c, px, py, pz)
+
+Omega = a * a * a
+count = sum(active)
+
+n
+Omega
+count
+G2[0]
+Sf[0]

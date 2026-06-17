@@ -705,10 +705,15 @@ def ast_to_torch_expr(node: ASTNode,
         tensor_funcs = {
             "fft": "torch.fft.fftn",
             "ifft": "torch.fft.ifftn",
+            "floor": "torch.floor",
         }
         single_arg_funcs = {**torch_funcs, **tensor_funcs}
         multi_arg_funcs = {
             "roll": "torch.roll",
+            "mod": "torch.remainder",
+            "gt": "torch.gt",
+            "le": "torch.le",
+            "mask_select": "torch.masked_select",
         }
 
         if func_name in single_arg_funcs:
@@ -721,6 +726,9 @@ def ast_to_torch_expr(node: ASTNode,
             # reshape(x, d1, d2, ...) -> torch.reshape(x, (int(d1), ...)).
             dims = ", ".join(f"int({a})" for a in arg_strs[1:])
             return f"torch.reshape({arg_strs[0]}, ({dims},))"
+        elif func_name == "arange":
+            # arange(n) -> torch.arange(int(n))  ->  [0, 1, ..., n-1]
+            return f"torch.arange(int({arg_strs[0]}))"
 
         elif func_name == "grad":
             # grad(output, input) -> compute_grad(output, input)
