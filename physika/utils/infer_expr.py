@@ -1026,7 +1026,7 @@ def expr_call(node: Any,
 
     # Built-in functions
     elementwise_ops = ("exp", "log", "sin", "cos", "sqrt", "abs", "tanh",
-                       "real", "imag", "floor", "mod", "gt", "le")
+                       "atan", "real", "imag", "floor", "mod", "gt", "le")
     if func_name in elementwise_ops:
         # Element-wise ops preserve the shape of their argument
         if arg_types:
@@ -1054,7 +1054,7 @@ def expr_call(node: Any,
         # mask_select(arr, mask): boolean select -> 1-D, data-dependent length
         return TTensor(((new_dim(), "invariant"), )), s
     if func_name == "mask_embed":
-        # mask_embed(values, mask, n): scatter compact values into full grid -> 1-D, size n
+        # mask_embed(values, mask, n): scatter into full grid -> 1-D, size n
         return TTensor(((new_dim(), "invariant"), )), s
 
     # User defined functions

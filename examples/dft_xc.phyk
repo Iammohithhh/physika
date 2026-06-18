@@ -1,0 +1,56 @@
+# Plane-wave DFT: LDA exchange-correlation (port of SimpleDFT.jl xc.jl).
+# Spin-paired Slater exchange + Chachiyo & VWN correlation; functionals of n.
+# VWN is reference-only upstream (SCF uses Chachiyo); kept for completeness.
+# rs = Wigner-Seitz radius; ex/ec = energy densities, vx/vc = potentials.
+
+# ── Functional definitions ──────────────────────────────────────────────────
+
+# Slater exchange (spin-paired). Returns [ex, vx]: energy density + potential.
+def lda_x(n: ℂ[k]): ℂ[2, k]:
+    pi = 3.141592653589793
+    slater = ((-3.0) / 4.0) * (3.0 / (2.0 * pi)) ** (2.0 / 3.0)
+    rs = (3.0 / (4.0 * pi * n)) ** (1.0 / 3.0)
+    ex = slater / rs
+    vx = (4.0 / 3.0) * ex
+    return [ex, vx]
+
+# Chachiyo correlation (spin-paired). Returns [ec, vc]. One smooth expression.
+def lda_c_chachiyo(n: ℂ[k]): ℂ[2, k]:
+    pi = 3.141592653589793
+    a = -0.01554535
+    b = 20.4562557
+    rs = (3.0 / (4.0 * pi * n)) ** (1.0 / 3.0)
+    ec = a * log(1.0 + b / rs + b / rs ** 2.0)
+    vc = ec + (a * b * (2.0 + rs)) / (3.0 * (b + b * rs + rs ** 2.0))
+    return [ec, vc]
+
+# Vosko-Wilk-Nusair correlation (spin-paired). Returns [ec, vc].
+# Reference-only upstream; needs atan. Kept for a complete LDA set.
+def lda_c_vwn(n: ℂ[k]): ℂ[2, k]:
+    pi = 3.141592653589793
+    # VWN parametrization constants (Eq. 2.12 ff.).
+    A = 0.0310907
+    b = 3.72744
+    c = 12.9352
+    x0 = -0.10498
+    rs = (3.0 / (4.0 * pi * n)) ** (1.0 / 3.0)
+    sqrt_rs = sqrt(rs)
+    denom = rs + b * sqrt_rs + c
+    Q = sqrt(4.0 * c - b ** 2.0)
+    f_at_x0 = b * x0 / (x0 ** 2.0 + b * x0 + c)
+    f3 = 2.0 * (2.0 * x0 + b) / Q
+    lin = 2.0 * sqrt_rs + b
+    atan_term = atan(Q / lin)
+    ec = A * (log(rs / denom) + 2.0 * b / Q * atan_term - f_at_x0 * (log((sqrt_rs - x0) ** 2.0 / denom) + f3 * atan_term))
+    tt = lin ** 2.0 + Q ** 2.0
+    vc = ec - sqrt_rs * A / 6.0 * (2.0 / sqrt_rs - lin / denom - 4.0 * b / tt - f_at_x0 * (2.0 / (sqrt_rs - x0) - lin / denom - 4.0 * (2.0 * x0 + b) / tt))
+    return [ec, vc]
+
+# ── Smoke test: a few sample densities ──────────────────────────────────────
+n_test: ℂ[4] = [0.5 + 0j, 1.0 + 0j, 2.0 + 0j, 4.0 + 0j]
+ex_vx = lda_x(n_test)
+ec_vc = lda_c_chachiyo(n_test)
+ec_vc_vwn = lda_c_vwn(n_test)
+ex_vx
+ec_vc
+ec_vc_vwn

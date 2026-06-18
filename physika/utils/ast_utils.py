@@ -701,11 +701,12 @@ def ast_to_torch_expr(node: ASTNode,
             "real": "torch.real",
         }
         # Single-arg tensor transforms: share torch_funcs' tensor-guard
-        # wrapper, but have no sympy equivalent (kept out of lambdify)
+        # kept out of the lambdify modules dict
         tensor_funcs = {
             "fft": "torch.fft.fftn",
             "ifft": "torch.fft.ifftn",
             "floor": "torch.floor",
+            "atan": "torch.atan",
         }
         single_arg_funcs = {**torch_funcs, **tensor_funcs}
         multi_arg_funcs = {
@@ -730,12 +731,10 @@ def ast_to_torch_expr(node: ASTNode,
             # arange(n) -> torch.arange(int(n))  ->  [0, 1, ..., n-1]
             return f"torch.arange(int({arg_strs[0]}))"
         elif func_name == "mask_embed":
-            # mask_embed(values, mask, n) -> zeros(n, dtype=values.dtype).masked_scatter(mask, values)
+            # mask_embed(values, mask, n) -> scatter into a zero-filled grid
             vals, mask_arg, n_arg = arg_strs[0], arg_strs[1], arg_strs[2]
-            return (
-                f"torch.zeros(int({n_arg}), dtype={vals}.dtype)"
-                f".masked_scatter({mask_arg}.bool(), {vals})"
-            )
+            return (f"torch.zeros(int({n_arg}), dtype={vals}.dtype)"
+                    f".masked_scatter({mask_arg}.bool(), {vals})")
 
         elif func_name == "grad":
             # grad(output, input) -> compute_grad(output, input)
