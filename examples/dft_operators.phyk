@@ -1,0 +1,90 @@
+# Plane-wave DFT operators (port of SimpleDFT.jl operators.jl).
+# All 7 operators as importable defs.
+
+# ── Operator definitions ──────────────────────────────────────────────────
+
+# Overlap: scale by cell volume Omega.
+def op_O(W: ℂ[k], Omega: ℝ): ℂ[k]:
+    return Omega * W
+
+# Laplacian: multiply by -Omega * |G|^2 in reciprocal space.
+def op_L(W: ℂ[k], G2c: ℝ[k], Omega: ℝ): ℂ[k]:
+    return (-Omega) * G2c * W
+
+# Inverse Laplacian: divide by -Omega*|G|^2, zero DC (G=0) to avoid division by zero.
+def op_Linv(W: ℂ[k], G2c: ℝ[k], Omega: ℝ): ℂ[k]:
+    nonzero = gt(G2c, 0.0)
+    nonzero_f = nonzero * 1.0
+    safe_G2c = G2c + (1.0 - nonzero_f) * 1.0
+    return (W / safe_G2c / (-Omega)) * nonzero_f
+
+# Forward transform: real-space -> full reciprocal grid (FFT, 1/n normalised).
+def op_J(W: ℂ[m], s1: ℕ, s2: ℕ, s3: ℕ): ℂ[k]:
+    n = s1 * s2 * s3
+    cube = reshape(W, s1, s2, s3)
+    spec = fft(cube)
+    flat = reshape(spec, n)
+    return flat / n
+
+# Backward transform: full reciprocal grid -> real-space (IFFT, *n normalised).
+def op_I(W: ℂ[m], s1: ℕ, s2: ℕ, s3: ℕ): ℂ[k]:
+    n = s1 * s2 * s3
+    cube = reshape(W, s1, s2, s3)
+    field = ifft(cube)
+    flat = reshape(field, n)
+    return flat * n
+
+# Adjoint of I: real-space -> active reciprocal (FFT then gather active set).
+def op_Idag(W: ℂ[m], active: ℝ[m], s1: ℕ, s2: ℕ, s3: ℕ): ℂ[k]:
+    n = s1 * s2 * s3
+    F = op_J(W, s1, s2, s3)
+    return mask_select(F, active) * n
+
+# Adjoint of J: active reciprocal -> real-space (scatter to full grid then IFFT).
+def op_Jdag(W: ℂ[k], active: ℝ[m], n: ℕ, s1: ℕ, s2: ℕ, s3: ℕ): ℂ[p]:
+    W_full = mask_embed(W, active, n)
+    return op_I(W_full, s1, s2, s3) / n
+
+# ── Smoke tests: 2x2x2 grid, a=2.0, ecut=5.0 ────────────────────────────
+# G2 = pi^2 * (n1^2 + n2^2 + n3^2); ecut=5 -> active where G2 <= 10.0.
+# active indices: (0,0,0), (0,0,1), (0,1,0), (1,0,0) -> 4 out of 8.
+
+s1 = 2
+s2 = 2
+s3 = 2
+n = 8
+Omega = 8.0
+
+ms = arange(n)
+m1 = mod(floor(ms / 4.0), 2.0)
+m2 = mod(floor(ms / 2.0), 2.0)
+m3 = mod(ms, 2.0)
+c = 3.141592653589793
+G2 = c * c * (m1 * m1 + m2 * m2 + m3 * m3)
+active = le(G2, 10.0)
+G2c = mask_select(G2, active)
+
+# op_J / op_I round trip: should recover the original field.
+W_real: ℂ[8] = [1+0j, 2+1j, 0+3j, -1+0j, 2+0j, 1-1j, 0+0j, 3+2j]
+W_spec = op_J(W_real, s1, s2, s3)
+W_back = op_I(W_spec, s1, s2, s3)
+W_real
+W_back
+
+# op_O: scale by Omega=8.
+op_O(W_real, Omega)
+
+# op_L / op_Linv round trip: Linv(L(W)) == W (DC entry stays 0).
+W_active: ℂ[4] = [0+0j, 1+0j, 1+0j, 1+0j]
+LW = op_L(W_active, G2c, Omega)
+LinvLW = op_Linv(LW, G2c, Omega)
+W_active
+LW
+LinvLW
+
+# op_Idag / op_Jdag round trip: constant field stays constant through active set.
+W_ones: ℂ[8] = [1+0j, 1+0j, 1+0j, 1+0j, 1+0j, 1+0j, 1+0j, 1+0j]
+W_idag = op_Idag(W_ones, active, s1, s2, s3)
+W_jdag = op_Jdag(W_idag, active, n, s1, s2, s3)
+W_idag
+W_jdag

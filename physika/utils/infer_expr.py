@@ -1053,6 +1053,9 @@ def expr_call(node: Any,
     if func_name == "mask_select":
         # mask_select(arr, mask): boolean select -> 1-D, data-dependent length
         return TTensor(((new_dim(), "invariant"), )), s
+    if func_name == "mask_embed":
+        # mask_embed(values, mask, n): scatter compact values into full grid -> 1-D, size n
+        return TTensor(((new_dim(), "invariant"), )), s
 
     # User defined functions
     if func_name in ctx.func_env:
