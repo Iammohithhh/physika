@@ -1,0 +1,33 @@
+# Plane-wave DFT: external potentials (port of SimpleDFT.jl potentials.jl).
+# All-electron Coulomb potential of point nuclei, in reciprocal space.
+
+from dft_operators import op_J
+
+# All-electron Coulomb potential (Thesis Eq. 3.15 ff.):
+#   Vcoul(G) = -4*pi*Z / |G|^2, with the divergent G=0 term set to zero,
+# weighted by the structure factor, then transformed to real space by op_J.
+# Z_nuc = nuclear charge; G2 = |G|^2; Sf = structure factor; s1..s3 = grid.
+
+def coulomb(Z_nuc: ℝ, G2: ℝ[k], Sf: ℂ[k], s1: ℕ, s2: ℕ, s3: ℕ): ℂ[k]:
+    pi = 3.141592653589793
+    # Mask the G=0 mode so -4*pi*Z / 0 never appears (same trick as op_Linv).
+    nonzero = gt(G2, 0.0)
+    nonzero_f = nonzero * 1.0
+    safe_G2 = G2 + (1.0 - nonzero_f) * 1.0
+    Vcoul = ((-4.0) * pi * Z_nuc / safe_G2) * nonzero_f
+    return op_J(Vcoul * Sf, s1, s2, s3)
+
+# ── Smoke test: 2x2x2 grid, single H nucleus (Z=1) at the origin ────────────
+s1 = 2
+s2 = 2
+s3 = 2
+n = 8
+ms = arange(n)
+m1 = mod(floor(ms / 4.0), 2.0)
+m2 = mod(floor(ms / 2.0), 2.0)
+m3 = mod(ms, 2.0)
+pi = 3.141592653589793
+G2 = pi * pi * (m1 * m1 + m2 * m2 + m3 * m3)
+Sf: ℂ[8] = [1 + 0j, 1 + 0j, 1 + 0j, 1 + 0j, 1 + 0j, 1 + 0j, 1 + 0j, 1 + 0j]
+Vcoul_g = coulomb(1.0, G2, Sf, s1, s2, s3)
+Vcoul_g
