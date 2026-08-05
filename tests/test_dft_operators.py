@@ -21,9 +21,10 @@ G2C = torch.masked_select(G2, ACTIVE)
 W_FULL = torch.tensor(
     [1 + 0j, 2 + 1j, 0 + 3j, -1 + 0j, 2 + 0j, 1 - 1j, 0 + 0j, 3 + 2j],
     dtype=torch.complex64)
-W_ACT = torch.tensor([0 + 0j, 1 + 2j, -1 + 0j, 0 + 3j], dtype=torch.complex64)
-W_MAT = torch.stack([W_FULL, W_FULL.flip(0)],
-                    dim=1)  # 8 plane waves x 2 states
+W_ACTIVE = torch.tensor([0 + 0j, 1 + 2j, -1 + 0j, 0 + 3j],
+                        dtype=torch.complex64)
+W_MATRIX = torch.stack([W_FULL, W_FULL.flip(0)],
+                       dim=1)  # 8 plane waves x 2 states
 
 
 @pytest.fixture(scope="module")
@@ -44,7 +45,7 @@ class TestFixtureMatchesReference:
     """The hand-computed constants must be what Atoms actually builds."""
 
     def test_volume(self, atoms):
-        # Omega = a^3 = 2^3
+        # Test value of omega is equal to 8, the volume of a 2x2x2 cell with side 2.
         assert atoms.volume().item() == pytest.approx(OMEGA)
 
     def test_g2(self, atoms):
@@ -70,13 +71,14 @@ class TestOverlap:
 
 
 class TestLaplacian:
-    """Laplacian and its inverse in reciprocal space."""
+    """Laplacian and its inverse in reciprocal space:
+       forward op_L, its inverse op_Linv, and the G=0 (DC) edge case."""
 
     def test_op_L_active_uses_G2c(self, ops, atoms):
         # active-length input picks G2c, not the full G2
-        out = ops["op_L"](atoms, W_ACT)
+        out = ops["op_L"](atoms, W_ACTIVE)
         assert torch.allclose(out,
-                              -OMEGA * G2C * W_ACT,
+                              -OMEGA * G2C * W_ACTIVE,
                               rtol=r_tol,
                               atol=a_tol)
 
@@ -143,21 +145,21 @@ class TestEmbed:
 
     def test_op_I_active_returns_full_grid(self, ops, atoms):
         # active-basis input still comes back on the full grid
-        assert ops["op_I"](atoms, W_ACT).shape == (N, )
+        assert ops["op_I"](atoms, W_ACTIVE).shape == (N, )
 
     def test_op_I_active_equals_op_I_of_embedded(self, ops, atoms):
         # embedding by hand first gives the same result
         scaffold = torch.zeros(N, dtype=torch.complex64).masked_scatter(
-            ACTIVE, W_ACT)
-        assert torch.allclose(ops["op_I"](atoms, W_ACT),
+            ACTIVE, W_ACTIVE)
+        assert torch.allclose(ops["op_I"](atoms, W_ACTIVE),
                               ops["op_I"](atoms, scaffold),
                               rtol=r_tol,
                               atol=a_tol)
 
     def test_mask_embed_roundtrips_through_mask_select(self, ops):
         # selecting the active entries back returns the input
-        out = ops["mask_embed"](W_ACT, ACTIVE, N)
-        assert torch.equal(torch.masked_select(out, ACTIVE), W_ACT)
+        out = ops["mask_embed"](W_ACTIVE, ACTIVE, N)
+        assert torch.equal(torch.masked_select(out, ACTIVE), W_ACTIVE)
 
 
 class TestAdjoints:
@@ -195,8 +197,8 @@ class TestMatrixForms:
 
     def test_op_J_mat_is_columnwise_op_J(self, ops, atoms):
         # op_J_mat applies op_J to each column independently
-        out = ops["op_J_mat"](atoms, W_MAT)
-        cols = [W_MAT[:, i] for i in range(W_MAT.shape[1])]
+        out = ops["op_J_mat"](atoms, W_MATRIX)
+        cols = [W_MATRIX[:, i] for i in range(W_MATRIX.shape[1])]
         expected = torch.stack(
             [torch.fft.fftn(c.reshape(S)).reshape(-1) / N for c in cols],
             dim=1)
@@ -204,27 +206,27 @@ class TestMatrixForms:
 
     def test_op_I_mat_inverts_op_J_mat(self, ops, atoms):
         # the matrix forms round-trip like the vector ones
-        out = ops["op_I_mat"](atoms, ops["op_J_mat"](atoms, W_MAT))
-        assert torch.allclose(out, W_MAT, rtol=r_tol, atol=a_tol)
+        out = ops["op_I_mat"](atoms, ops["op_J_mat"](atoms, W_MATRIX))
+        assert torch.allclose(out, W_MATRIX, rtol=r_tol, atol=a_tol)
 
     def test_op_L_mat_matches_columnwise(self, ops, atoms):
         # op_L_mat scales each column by -Omega * G2c
-        W2 = torch.stack([W_ACT, 2 * W_ACT], dim=1)  # 4 x 2
+        W2 = torch.stack([W_ACTIVE, 2 * W_ACTIVE], dim=1)  # 4 x 2
         out = ops["op_L_mat"](atoms, W2)
         expected = -OMEGA * G2C.unsqueeze(1) * W2  # G2C down each column
         assert torch.allclose(out, expected, rtol=r_tol, atol=a_tol)
 
     def test_op_Linv_mat_matches_columnwise(self, ops, atoms):
         # each column matches the vector op_Linv
-        out = ops["op_Linv_mat"](atoms, W_MAT)
+        out = ops["op_Linv_mat"](atoms, W_MATRIX)
         assert torch.allclose(out[:, 0],
-                              ops["op_Linv"](atoms, W_MAT[:, 0]),
+                              ops["op_Linv"](atoms, W_MATRIX[:, 0]),
                               rtol=r_tol,
                               atol=a_tol)
 
     def test_op_Idag_mat_shape_and_values(self, ops, atoms):
         # op_Idag_mat applies op_Idag to each column
-        out = ops["op_Idag_mat"](atoms, W_MAT)
-        col0 = ops["op_Idag"](atoms, W_MAT[:, 0])
+        out = ops["op_Idag_mat"](atoms, W_MATRIX)
+        col0 = ops["op_Idag"](atoms, W_MATRIX[:, 0])
         assert out.shape == (4, 2)  # (active plane waves x states)
         assert torch.allclose(out[:, 0], col0, rtol=r_tol, atol=a_tol)

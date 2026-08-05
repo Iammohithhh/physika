@@ -23,7 +23,20 @@
 
 from dft_atoms import Atoms
 
-π = 3.141592653589793
+π: ℝ = 3.141592653589793
+
+#------------------------------------------------------------------
+# Helper functions - length of a vector, rows and columns of a matrix.
+#------------------------------------------------------------------
+
+def vec_size(x: ℂ[k]): ℕ:
+    return len(x)
+
+def mat_rows(x: ℂ[k, m]): ℕ:
+    return len(x)
+
+def mat_cols(x: ℂ[k, m]): ℕ:
+    return len(x[0])
 
 #------------------------------------------------------------------
 # Helper function - mask_embed.
@@ -37,8 +50,8 @@ from dft_atoms import Atoms
 
 # Embed active-basis coefficients into the full reciprocal grid.
 def mask_embed(values: ℂ[p], mask: ℝ[k], n: ℕ): ℂ[k]:
-    # Allocate a zero-filled vector on the full reciprocal grid.
-    empty : ℂ[k] = arange(n) * 0j
+    # Allocate a complex zero vector on the full reciprocal grid.
+    empty: ℂ[k] = arange(n) * 0j
     # Scatter the active-basis coefficients into the masked positions.
     return masked_scatter(empty, mask, values)
 
@@ -61,19 +74,19 @@ def op_O_mat(atoms: Atoms, W: ℂ[k, m]): ℂ[k, m]:
 
 def op_L(atoms: Atoms, W: ℂ[k]): ℂ[k]:
     # Active-basis |G|² values.
-    G2c : ℝ[p] = atoms.g2c()
-    if len(W) == len(G2c):
+    G2c: ℝ[p] = atoms.g2c()
+    if vec_size(W) == vec_size(G2c):
         # Active-basis input: use |G|² on the active plane-wave basis.
-        G2 : ℝ[k] = G2c
+        G2: ℝ[k] = G2c
     else:
         # Full-grid input: use |G|² on the full reciprocal grid.
-        G2 : ℝ[k] = atoms.g2()
+        G2: ℝ[k] = atoms.g2()
     return (-atoms.volume()) * G2 * W
 
 def op_L_mat(atoms: Atoms, W: ℂ[k, m]): ℂ[k, m]:
-    Npw : ℕ = len(W)                # plane-wave dimension (rows)
-    Nstate : ℕ = len(W[0])          # number of states (columns)
-    out : ℂ[k, m] = reshape(arange(Npw * Nstate) * 0j, Npw, Nstate)
+    Npw: ℕ = mat_rows(W)                # plane-wave dimension (rows)
+    Nstate: ℕ = mat_cols(W)          # number of states (columns)
+    out: ℂ[k, m] = reshape(arange(Npw * Nstate) * 0j, Npw, Nstate)
     for state: ℕ(Nstate):
         out[:, state] = op_L(atoms, W[:, state])
     return out
@@ -84,17 +97,17 @@ def op_L_mat(atoms: Atoms, W: ℂ[k, m]): ℂ[k, m]:
 #------------------------------------------------------------------
 
 def op_Linv(atoms: Atoms, W: ℂ[k]): ℂ[k]:
-    G2 : ℝ[k] = atoms.g2()
+    G2: ℝ[k] = atoms.g2()
     # Mask identifying nonzero reciprocal vectors.
-    nonzero : ℝ[k] = gt(G2, 0.0) * 1.0
+    nonzero: ℝ[k] = gt(G2, 0.0) * 1.0
     # Replace G² = 0 with 1 so division remains well-defined.
-    safe_G2 : ℝ[k] = G2 + (1.0 - nonzero)
+    safe_G2: ℝ[k] = G2 + (1.0 - nonzero)
     return (W / safe_G2 / (-atoms.volume())) * nonzero
 
 def op_Linv_mat(atoms: Atoms, W: ℂ[k, m]): ℂ[k, m]:
-    Npw : ℕ = len(W)
-    Nstate : ℕ = len(W[0])
-    out : ℂ[k, m] = reshape(arange(Npw * Nstate) * 0j, Npw, Nstate)
+    Npw: ℕ = mat_rows(W)
+    Nstate: ℕ = mat_cols(W)
+    out: ℂ[k, m] = reshape(arange(Npw * Nstate) * 0j, Npw, Nstate)
     for state: ℕ(Nstate):
         out[:, state] = op_Linv(atoms, W[:, state])
     return out
@@ -105,21 +118,21 @@ def op_Linv_mat(atoms: Atoms, W: ℂ[k, m]): ℂ[k, m]:
 #------------------------------------------------------------------
 
 def op_J(atoms: Atoms, W: ℂ[k]): ℂ[k]:
-    s1 : ℕ = atoms.s1
-    s2 : ℕ = atoms.s2
-    s3 : ℕ = atoms.s3
-    Ngrid : ℕ = s1 * s2 * s3
+    s1: ℕ = atoms.s1
+    s2: ℕ = atoms.s2
+    s3: ℕ = atoms.s3
+    Ngrid: ℕ = s1 * s2 * s3
     # Reshape the flattened input onto the 3D real-space grid.
-    real_grid : ℂ[s1, s2, s3] = reshape(W, s1, s2, s3)
+    real_grid: ℂ[s1, s2, s3] = reshape(W, s1, s2, s3)
     # Transform to the reciprocal grid.
-    reciprocal_grid : ℂ[s1, s2, s3] = fftn(real_grid)
+    reciprocal_grid: ℂ[s1, s2, s3] = fftn(real_grid)
     # Flatten and normalize the Fourier coefficients.
     return reshape(reciprocal_grid, Ngrid) / Ngrid
 
 def op_J_mat(atoms: Atoms, W: ℂ[k, m]): ℂ[k, m]:
-    Ngrid : ℕ = atoms.s1 * atoms.s2 * atoms.s3
-    Nstate : ℕ = len(W[0])
-    out : ℂ[k, m] = reshape(arange(Ngrid * Nstate) * 0j, Ngrid, Nstate)
+    Ngrid: ℕ = atoms.s1 * atoms.s2 * atoms.s3
+    Nstate: ℕ = mat_cols(W)
+    out: ℂ[k, m] = reshape(arange(Ngrid * Nstate) * 0j, Ngrid, Nstate)
     for state: ℕ(Nstate):
         out[:, state] = op_J(atoms, W[:, state])
     return out
@@ -130,26 +143,26 @@ def op_J_mat(atoms: Atoms, W: ℂ[k, m]): ℂ[k, m]:
 #------------------------------------------------------------------
 
 def op_I(atoms: Atoms, W: ℂ[k]): ℂ[k]:
-    s1 : ℕ = atoms.s1
-    s2 : ℕ = atoms.s2
-    s3 : ℕ = atoms.s3
-    Ngrid : ℕ = s1 * s2 * s3
+    s1: ℕ = atoms.s1
+    s2: ℕ = atoms.s2
+    s3: ℕ = atoms.s3
+    Ngrid: ℕ = s1 * s2 * s3
     # If W already spans the full reciprocal grid, use it directly.
-    active : ℝ[k] = atoms.active()
-    if len(W) == len(active):
-        reciprocal_grid : ℂ[k] = W
+    active: ℝ[k] = atoms.active()
+    if vec_size(W) == vec_size(active):
+        reciprocal_grid: ℂ[k] = W
     else:
-        reciprocal_grid : ℂ[k] = mask_embed(W, active, Ngrid)
+        reciprocal_grid: ℂ[k] = mask_embed(W, active, Ngrid)
     # Reshape onto the 3D reciprocal grid.
-    reciprocal_grid3d : ℂ[s1, s2, s3] = reshape(reciprocal_grid, s1, s2, s3)
+    reciprocal_grid3d: ℂ[s1, s2, s3] = reshape(reciprocal_grid, s1, s2, s3)
     # Transform to the real-space grid.
-    real_grid : ℂ[s1, s2, s3] = ifftn(reciprocal_grid3d)
+    real_grid: ℂ[s1, s2, s3] = ifftn(reciprocal_grid3d)
     return reshape(real_grid, Ngrid) * Ngrid
 
 def op_I_mat(atoms: Atoms, W: ℂ[k, m]): ℂ[k, m]:
-    Ngrid : ℕ = atoms.s1 * atoms.s2 * atoms.s3
-    Nstate : ℕ = len(W[0])
-    out : ℂ[k, m] = reshape(arange(Ngrid * Nstate) * 0j, Ngrid, Nstate)
+    Ngrid: ℕ = atoms.s1 * atoms.s2 * atoms.s3
+    Nstate: ℕ = mat_cols(W)
+    out: ℂ[k, m] = reshape(arange(Ngrid * Nstate) * 0j, Ngrid, Nstate)
     for state: ℕ(Nstate):
         out[:, state] = op_I(atoms, W[:, state])
     return out
@@ -162,16 +175,16 @@ def op_I_mat(atoms: Atoms, W: ℂ[k, m]): ℂ[k, m]:
 #------------------------------------------------------------------
 
 def op_Idag(atoms: Atoms, W: ℂ[k]): ℂ[p]:
-    Ngrid : ℕ = atoms.s1 * atoms.s2 * atoms.s3
+    Ngrid: ℕ = atoms.s1 * atoms.s2 * atoms.s3
     # Transform to the reciprocal space.
-    F : ℂ[k] = op_J(atoms, W)
+    F: ℂ[k] = op_J(atoms, W)
     # Keep only the active plane-wave coefficients.
     return mask_select(F, atoms.active()) * Ngrid
 
 def op_Idag_mat(atoms: Atoms, W: ℂ[k, m]): ℂ[p, m]:
-    Nactive : ℕ = len(atoms.g2c())
-    Nstate : ℕ = len(W[0])
-    out : ℂ[p, m] = reshape(arange(Nactive * Nstate) * 0j, Nactive, Nstate)
+    Nactive: ℕ = vec_size(atoms.g2c())
+    Nstate: ℕ = mat_cols(W)
+    out: ℂ[p, m] = reshape(arange(Nactive * Nstate) * 0j, Nactive, Nstate)
     for state: ℕ(Nstate):
         out[:, state] = op_Idag(atoms, W[:, state])
     return out
@@ -183,12 +196,12 @@ def op_Idag_mat(atoms: Atoms, W: ℂ[k, m]): ℂ[p, m]:
 #------------------------------------------------------------------
 
 def op_Jdag(atoms: Atoms, W: ℂ[k]): ℂ[k]:
-    Ngrid : ℕ = atoms.s1 * atoms.s2 * atoms.s3
+    Ngrid: ℕ = atoms.s1 * atoms.s2 * atoms.s3
     # Apply the inverse transform with adjoint normalization.
     return op_I(atoms, W) / Ngrid
 
 def op_Jdag_mat(atoms: Atoms, W: ℂ[k, m]): ℂ[k, m]:
-    Ngrid : ℕ = atoms.s1 * atoms.s2 * atoms.s3
+    Ngrid: ℕ = atoms.s1 * atoms.s2 * atoms.s3
     return op_I_mat(atoms, W) / Ngrid
 
 #------------------------------------------------------------------
@@ -203,43 +216,43 @@ def op_Jdag_mat(atoms: Atoms, W: ℂ[k, m]): ℂ[k, m]:
 
 # Cubic cell: side a=16 Bohr, kinetic cutoff ecut=16 Hartree,
 # 60 grid points per axis
-a : ℝ = 16.0
-ecut : ℝ = 16.0
-s : ℕ = 60
+a: ℝ = 16.0
+ecut: ℝ = 16.0
+s: ℕ = 60
 
 # Single H nucleus (Z=1) at the cell origin, one occupied state (f=1).
-Natoms : ℕ = 1
-Nstate : ℕ = 1
-px : ℝ[1] = [0.0]
-py : ℝ[1] = [0.0]
-pz : ℝ[1] = [0.0]
-Z_nuc : ℝ[1] = [1.0]
-f : ℝ[1] = [1.0]
+Natoms: ℕ = 1
+Nstate: ℕ = 1
+px: ℝ[1] = [0.0]
+py: ℝ[1] = [0.0]
+pz: ℝ[1] = [0.0]
+Z_nuc: ℝ[1] = [1.0]
+f: ℝ[1] = [1.0]
 
-H_atom : Atoms = Atoms(a, ecut, s, s, s, Natoms, px, py, pz, Nstate, Z_nuc, f)
+H_atom: Atoms = Atoms(a, ecut, s, s, s, Natoms, px, py, pz, Nstate, Z_nuc, f)
 
 # Structure factor Sf(G)
-Sf : ℂ[k] = H_atom.sf()
+Sf: ℂ[k] = H_atom.sf()
 Sf[0]
 
 # Overlap operator:
-Sf_overlap : ℂ[k] = op_O(H_atom, Sf)
+Sf_overlap: ℂ[k] = op_O(H_atom, Sf)
 Sf_overlap[0]
 
 # Laplacian:
-Sf_laplacian : ℂ[k] = op_L(H_atom, Sf)
-Sf_laplacian_inv : ℂ[k] = op_Linv(H_atom, Sf_laplacian)
+Sf_laplacian: ℂ[k] = op_L(H_atom, Sf)
+Sf_laplacian_inv: ℂ[k] = op_Linv(H_atom, Sf_laplacian)
 Sf_laplacian_inv[0]
 Sf_laplacian_inv[1]
 
 # Forward/inverse transform pair: op_J and op_I round-trip exactly.
-Sf_forward : ℂ[k] = op_J(H_atom, Sf)
-Sf_forward_inverse : ℂ[k] = op_I(H_atom, Sf_forward)
+Sf_forward: ℂ[k] = op_J(H_atom, Sf)
+Sf_forward_inverse: ℂ[k] = op_I(H_atom, Sf_forward)
 Sf_forward_inverse[0]
 
 # active plane-wave basis (|G|^2 <= 2*ecut).
-Sf_active : ℂ[p] = op_Idag(H_atom, Sf_forward_inverse)
+Sf_active: ℂ[p] = op_Idag(H_atom, Sf_forward_inverse)
 
 # Adjoint of the forward transform.
-Sf_adjoint : ℂ[k] = op_Jdag(H_atom, Sf_forward)
+Sf_adjoint: ℂ[k] = op_Jdag(H_atom, Sf_forward)
 Sf_adjoint[0]
