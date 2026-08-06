@@ -1,0 +1,128 @@
+# ============================================================
+# DFT density and electrostatics (port of SimpleDFT.jl dft.jl)
+# ============================================================
+#
+# Computes the normalized orbital, total electron density, and
+# Hartree potential from the orbital coefficients.
+#------------------------------------------------------------------
+
+from dft_atoms import Atoms
+from dft_operators import op_I, op_J, op_O, op_Linv
+
+
+π: ℝ = 3.141592653589793
+
+#------------------------------------------------------------------
+# Helper function - mask_embed.
+
+# values : coefficients on the active plane-wave basis
+# mask   : active-plane-wave mask on the full reciprocal grid
+# n      : size of the full reciprocal grid
+#
+# Returns the coefficients embedded into the full reciprocal grid.
+
+def mask_embed(values: ℂ[p], mask: ℝ[k], n: ℕ): ℂ[k]:
+    # Allocate a complex zero vector on the full reciprocal grid.
+    empty: ℂ[k] = arange(n) * 0j
+    # Scatter the active-basis coefficients into the masked positions.
+    return masked_scatter(empty, mask, values)
+
+# Helper function - length of a vector
+
+def vec_size(x: ℂ[k]): ℕ:
+    return len(x)
+#------------------------------------------------------------------
+
+#----------------------------------------------------------------
+#   W    Unnormalized orbital coefficients on the active plane-wave basis
+#   Y    Normalized orbital coefficients on the active plane-wave basis
+#   n      electron density, full real-space grid
+#   phi    Hartree potential, full reciprocal-space grid
+# Note: p = number of active plane waves; k = number of grid points.
+#----------------------------------------------------------------
+
+#------------------------------------------------------------------
+# Löwdin normalization.
+#
+# Computes the normalized orbital
+#
+#     Y = W (Wᴴ O W)^(-1/2)
+# For a single occupied state (Nstate = 1), W^H O W is a scalar.
+# Since O(W) = ΩW, this reduces to
+#     Y = W / sqrt(Ω Σ_G |W_G|²).
+#------------------------------------------------------------------
+
+def orth(atoms: Atoms, W: ℂ[p]): ℂ[p]:
+    norm: ℝ = sqrt(atoms.volume() * sum(abs(W) ** 2.0))
+    return W / norm
+
+#------------------------------------------------------------------
+# Total electron density: n = f₀ |Yrs|²
+# (f₀: occupation number of the single state; Yrs: orbital on the real-space grid)
+#
+# Y contains only active plane-wave coefficients, so it is first
+# embedded into the full grid and then inverse-transformed by op_I.
+#------------------------------------------------------------------
+
+def get_n_total(atoms: Atoms, Y: ℂ[p]): ℝ[k]:
+    active: ℝ[k] = atoms.active()
+    n_full: ℕ = vec_size(active)                            # Number of grid points
+    # Embed the active plane-wave coefficients into the full grid.
+    Y_full: ℂ[k] = mask_embed(Y, active, n_full)
+    # Transform orbital to the real space
+    Yrs: ℂ[k] = op_I(atoms, Y_full)
+    f0: ℝ = atoms.f[0]
+    return f0 * abs(Yrs) ** 2.0
+
+#------------------------------------------------------------------
+# Hartree potential: phi = -4π L^(-1) O J(n)
+# (J: forward transform - op_J; O: overlap operator - op_O;
+#  L^(-1): inverse Laplacian operator - op_Linv)
+#
+# Solves Poisson's equation ∇² phi = -4πn in reciprocal space.
+# The real density n is cast to complex because the operators act on ℂ[k].
+#------------------------------------------------------------------
+
+def get_phi(atoms: Atoms, n: ℝ[k]): ℂ[k]:
+    # Convert the real density to complex for the reciprocal-space operators
+    n_c: ℂ[k] = n * (1.0 + 0j)
+    n_recip: ℂ[k] = op_J(atoms, n_c)  # Transform the density to reciprocal space
+    return (-4.0) * π * op_Linv(atoms, op_O(atoms, n_recip))
+
+#------------------------------------------------------------------
+# Example: construct a normalized hydrogen orbital, compute the
+# corresponding electron density, and solve Poisson's equation
+# for the Hartree potential.
+#------------------------------------------------------------------
+
+a: ℝ = 16.0       # Side length of the cubic cell (Bohr)
+ecut: ℝ = 16.0    # Plane-wave kinetic energy cutoff (Hartree)
+s: ℕ = 60         # Number of grid points along each axis
+
+Natoms: ℕ = 1
+Nstate: ℕ = 1
+
+px: ℝ[1] = [0.0]  # x-coordinate of the nucleus
+py: ℝ[1] = [0.0]  # y-coordinate of the nucleus
+pz: ℝ[1] = [0.0]  # z-coordinate of the nucleus
+
+Z_nuc: ℝ[1] = [1.0]   # Nuclear charge
+f: ℝ[1] = [1.0]       # Occupation number
+
+H_atom: Atoms = Atoms(a, ecut, s, s, s, Natoms, px, py, pz, Nstate, Z_nuc, f)
+
+# Initial Gaussian guess for the orbital coefficients.
+W0: ℂ[p] = exp(-0.5 * H_atom.g2c()) * (1.0 + 0j)
+
+# Löwdin-normalize:
+Y0: ℂ[p] = orth(H_atom, W0)
+norm_check: ℝ = H_atom.volume() * sum(abs(Y0) ** 2.0)
+norm_check             # should return 1
+
+# Construct the electron density from the normalized orbital.
+n0: ℝ[k] = get_n_total(H_atom, Y0)         
+
+# Solve Poisson's equation for the Hartree potential.
+phi0: ℂ[k] = get_phi(H_atom, n0)
+phi0[0]                 
+phi0[1]                  # potential at the first nonzero |G|
